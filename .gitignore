@@ -1,3 +1,6 @@
+# Agentic Coding
+.claude
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -205,3 +208,56 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# DataLad/Git-Annex
+.datalad/
+.git/annex/
+
+# Redis dumps
+dump.rdb
+
+# Docker volumes
+docker-data/
+
+# OpenOrganoid-Server specific
+data/
+uploads/
+storage/
+*.sqlite
+*.db
+
+# Environment files
+.env.*
+!.env.example
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+
+# Backup files
+*.bak
+*.backup
+
+# Temporary storage
+tmp/
+temp/
+
+# IDE specific
+.vscode/
+.idea/
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# FastAPI/Uvicorn
+*.pid
+
+# Alembic
+alembic.ini.bak

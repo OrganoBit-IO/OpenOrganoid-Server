@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: openorganoid-postgres
+    environment:
+      POSTGRES_DB: openorganoid
+      POSTGRES_USER: openorganoid
+      POSTGRES_PASSWORD: openorganoid_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - openorganoid-network
+
+  # Redis Cache & Message Broker
+  redis:
+    image: redis:7-alpine
+    container_name: openorganoid-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - openorganoid-network
+
+  # API Gateway
+  api:
+    build:
+      context: ../../api
+      dockerfile: Dockerfile
+    container_name: openorganoid-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql://openorganoid:openorganoid_dev_password@postgres:5432/openorganoid
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=dev_secret_key_change_in_production
+      - ENVIRONMENT=development
+    volumes:
+      - ../../api:/app
+      - data_storage:/app/data
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - openorganoid-network
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery Worker
+  worker:
+    build:
+      context: ../../workers
+      dockerfile: Dockerfile
+    container_name: openorganoid-worker
+    environment:
+      - DATABASE_URL=postgresql://openorganoid:openorganoid_dev_password@postgres:5432/openorganoid
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=dev_secret_key_change_in_production
+    volumes:
+      - ../../workers:/app
+      - data_storage:/app/data
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - openorganoid-network
+    command: celery -A app.worker worker --loglevel=info
+
+  # Flower (Celery monitoring)
+  flower:
+    build:
+      context: ../../workers
+      dockerfile: Dockerfile
+    container_name: openorganoid-flower
+    ports:
+      - "5555:5555"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    networks:
+      - openorganoid-network
+    command: celery -A app.worker flower
+
+volumes:
+  postgres_data:
+  redis_data:
+  data_storage:
+
+networks:
+  openorganoid-network:
+    driver: bridge
