@@ -7,8 +7,15 @@ from pathlib import Path
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from prometheus_fastapi_instrumentator import Instrumentator
 import structlog
+
+# Optional imports
+try:
+    from prometheus_fastapi_instrumentator import Instrumentator
+    PROMETHEUS_AVAILABLE = True
+except ImportError:
+    Instrumentator = None
+    PROMETHEUS_AVAILABLE = False
 
 # Configure structured logging first
 structlog.configure(
@@ -205,8 +212,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Add prometheus metrics if in production
-if settings.environment == "production":
+# Add prometheus metrics if in production and available
+if settings.environment == "production" and PROMETHEUS_AVAILABLE:
     instrumentator = Instrumentator()
     instrumentator.instrument(app).expose(app)
 
