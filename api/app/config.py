@@ -40,6 +40,17 @@ class Settings(BaseSettings):
     # DataLad Configuration
     datalad_path: str = Field(default="./data/datalad", description="Base path for DataLad repositories")
     
+    # S3/DigitalOcean Spaces Configuration
+    s3_endpoint_url: Optional[str] = Field(default=None, description="S3 endpoint URL (for DigitalOcean Spaces)")
+    s3_access_key_id: Optional[str] = Field(default=None, description="S3 access key ID")
+    s3_secret_access_key: Optional[str] = Field(default=None, description="S3 secret access key")
+    s3_bucket_name: Optional[str] = Field(default=None, description="S3 bucket name")
+    s3_region: str = Field(default="us-east-1", description="S3 region")
+    
+    # Railway Configuration
+    railway_environment: Optional[str] = Field(default=None, description="Railway environment")
+    port: int = Field(default=8000, description="Server port")
+    
     # API Configuration
     api_v1_prefix: str = Field(default="/api/v1", description="API v1 prefix")
     cors_origins: list[str] = Field(

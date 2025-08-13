@@ -90,3 +90,69 @@ def internal_server_exception(message: str = "Internal server error") -> HTTPExc
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail=message,
     )
+
+
+# Exception handlers for FastAPI app
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+import structlog
+
+logger = structlog.get_logger()
+
+
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """Handle HTTP exceptions"""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "error": {
+                "message": exc.detail,
+                "status_code": exc.status_code,
+                "path": str(request.url.path)
+            }
+        }
+    )
+
+
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Handle request validation errors"""
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "message": "Validation error",
+                "status_code": 422,
+                "path": str(request.url.path),
+                "details": exc.errors()
+            }
+        }
+    )
+
+
+async def general_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Handle unexpected exceptions"""
+    logger.error("Unhandled exception", 
+                error=str(exc), 
+                path=str(request.url.path),
+                method=request.method)
+    
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": {
+                "message": "Internal server error",
+                "status_code": 500,
+                "path": str(request.url.path)
+            }
+        }
+    )
+
+
+def setup_exception_handlers(app):
+    """Setup exception handlers for the FastAPI app"""
+    app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(StarletteHTTPException, http_exception_handler)
+    app.add_exception_handler(RequestValidationError, validation_exception_handler)
+    app.add_exception_handler(Exception, general_exception_handler)
