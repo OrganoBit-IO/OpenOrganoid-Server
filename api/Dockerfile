@@ -18,12 +18,12 @@ RUN apt-get update && apt-get install -y \
 RUN pip install uv
 
 # Copy api dependency files first
-COPY api/pyproject.toml ./
+COPY api/pyproject.toml api/uv.lock ./
 
-# Create and activate virtual environment, install dependencies
-RUN uv venv /opt/venv && \
-    . /opt/venv/bin/activate && \
-    uv sync --frozen
+# Create virtual environment and install dependencies
+RUN uv venv /opt/venv
+ENV VIRTUAL_ENV=/opt/venv
+RUN uv sync --frozen
 
 # Copy api application code
 COPY api/ .
