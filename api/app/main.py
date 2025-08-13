@@ -39,11 +39,9 @@ structlog.configure(
 logger = structlog.get_logger()
 
 from app.config import settings
-
-# Import basic routers only (others may have dependency issues)
 from app.routers.health import router as health_router
 
-# Services and other routers - import with error handling
+# Optional services and routers
 try:
     from app.database.connection import create_tables, close_db_connection
     from app.core.exceptions import setup_exception_handlers
@@ -57,26 +55,16 @@ try:
     from app.routers.validation import router as validation_router
     from app.routers.admin import router as admin_router
     
-    FULL_IMPORTS_AVAILABLE = True
-except Exception as e:
-    logger.error("Some imports failed - running in minimal mode", error=str(e))
-    FULL_IMPORTS_AVAILABLE = False
-    create_tables = None
-    close_db_connection = None
-    setup_exception_handlers = None
-    DataLadService = None
-    CacheManager = None
-    FileManagementService = None
-    auth_router = None
-    datasets_router = None
-    files_router = None
-    validation_router = None
-    admin_router = None
+    SERVICES_AVAILABLE = True
+except ImportError as e:
+    logger.warning("Optional services not available - running in minimal mode", error=str(e))
+    SERVICES_AVAILABLE = False
+    create_tables = close_db_connection = setup_exception_handlers = None
+    DataLadService = CacheManager = FileManagementService = None
+    auth_router = datasets_router = files_router = validation_router = admin_router = None
 
 # Global service instances
-datalad_service: DataLadService = None
-cache_manager: CacheManager = None
-file_manager: FileManagementService = None
+datalad_service = cache_manager = file_manager = None
 
 
 @asynccontextmanager
@@ -95,8 +83,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         Path(settings.storage_path).mkdir(parents=True, exist_ok=True)
         Path(settings.upload_path).mkdir(parents=True, exist_ok=True)
         
-        # Only initialize services if full imports are available
-        if FULL_IMPORTS_AVAILABLE:
+        # Only initialize services if available
+        if SERVICES_AVAILABLE:
             # Initialize database tables (optional - may fail in development)
             try:
                 if create_tables:
@@ -194,7 +182,7 @@ app = FastAPI(
 )
 
 # Setup exception handlers if available
-if FULL_IMPORTS_AVAILABLE and setup_exception_handlers:
+if SERVICES_AVAILABLE and setup_exception_handlers:
     setup_exception_handlers(app)
 
 # Add security middleware
@@ -221,7 +209,7 @@ if settings.environment == "production" and PROMETHEUS_AVAILABLE:
 app.include_router(health_router, tags=["health"])
 
 # Include other routers only if available
-if FULL_IMPORTS_AVAILABLE:
+if SERVICES_AVAILABLE:
     if auth_router:
         app.include_router(auth_router, prefix=settings.api_v1_prefix, tags=["authentication"])
     if datasets_router:
@@ -243,18 +231,19 @@ async def root():
         "docs": "/docs" if settings.environment == "development" else "Contact admin for API documentation"
     }
 
-# Dependency providers for services
-def get_datalad_service() -> DataLadService:
-    if datalad_service is None:
-        raise HTTPException(status_code=503, detail="DataLad service not initialized")
-    return datalad_service
+# Dependency providers for services (only available if services loaded)
+if SERVICES_AVAILABLE:
+    def get_datalad_service():
+        if datalad_service is None:
+            raise HTTPException(status_code=503, detail="DataLad service not initialized")
+        return datalad_service
 
-def get_cache_manager() -> CacheManager:
-    if cache_manager is None:
-        raise HTTPException(status_code=503, detail="Cache manager not initialized")
-    return cache_manager
+    def get_cache_manager():
+        if cache_manager is None:
+            raise HTTPException(status_code=503, detail="Cache manager not initialized")
+        return cache_manager
 
-def get_file_manager() -> FileManagementService:
-    if file_manager is None:
-        raise HTTPException(status_code=503, detail="File management service not initialized")
-    return file_manager
+    def get_file_manager():
+        if file_manager is None:
+            raise HTTPException(status_code=503, detail="File management service not initialized")
+        return file_manager
