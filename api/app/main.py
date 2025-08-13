@@ -10,22 +10,7 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 import structlog
 
-from app.config import settings
-from app.database.connection import create_tables, close_db_connection
-from app.core.exceptions import setup_exception_handlers
-from app.services.datalad_service import DataLadService
-from app.services.cache_manager import CacheManager
-from app.services.file_manager import FileManagementService
-
-# Import routers
-from app.routers.auth import router as auth_router
-from app.routers.datasets import router as datasets_router
-from app.routers.files import router as files_router
-from app.routers.validation import router as validation_router
-from app.routers.admin import router as admin_router
-from app.routers.health import router as health_router
-
-# Configure structured logging
+# Configure structured logging first
 structlog.configure(
     processors=[
         structlog.stdlib.filter_by_level,
@@ -45,6 +30,41 @@ structlog.configure(
 )
 
 logger = structlog.get_logger()
+
+from app.config import settings
+
+# Import basic routers only (others may have dependency issues)
+from app.routers.health import router as health_router
+
+# Services and other routers - import with error handling
+try:
+    from app.database.connection import create_tables, close_db_connection
+    from app.core.exceptions import setup_exception_handlers
+    from app.services.datalad_service import DataLadService
+    from app.services.cache_manager import CacheManager  
+    from app.services.file_manager import FileManagementService
+    
+    from app.routers.auth import router as auth_router
+    from app.routers.datasets import router as datasets_router
+    from app.routers.files import router as files_router
+    from app.routers.validation import router as validation_router
+    from app.routers.admin import router as admin_router
+    
+    FULL_IMPORTS_AVAILABLE = True
+except Exception as e:
+    logger.error("Some imports failed - running in minimal mode", error=str(e))
+    FULL_IMPORTS_AVAILABLE = False
+    create_tables = None
+    close_db_connection = None
+    setup_exception_handlers = None
+    DataLadService = None
+    CacheManager = None
+    FileManagementService = None
+    auth_router = None
+    datasets_router = None
+    files_router = None
+    validation_router = None
+    admin_router = None
 
 # Global service instances
 datalad_service: DataLadService = None
@@ -68,49 +88,57 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         Path(settings.storage_path).mkdir(parents=True, exist_ok=True)
         Path(settings.upload_path).mkdir(parents=True, exist_ok=True)
         
-        # Initialize database tables (optional - may fail in development)
-        try:
-            await create_tables()
-            logger.info("Database tables initialized")
-        except Exception as e:
-            logger.warning("Database initialization failed - continuing without DB", error=str(e))
-        
-        # Initialize DataLad service (optional)
-        try:
-            datalad_service = DataLadService(workspace_root=Path(settings.datalad_path))
-            await datalad_service.initialize()
-            logger.info("DataLad service initialized")
-        except Exception as e:
-            logger.warning("DataLad service initialization failed - continuing without DataLad", error=str(e))
-        
-        # Initialize cache manager (optional)
-        try:
-            cache_manager = CacheManager(redis_url=settings.redis_url)
-            await cache_manager.initialize()
-            logger.info("Cache manager initialized")
-        except Exception as e:
-            logger.warning("Cache manager initialization failed - continuing without Redis", error=str(e))
-        
-        # Initialize file management service (optional)
-        try:
-            file_manager = FileManagementService({
-                'endpoint_url': getattr(settings, 's3_endpoint_url', None),
-                'access_key_id': getattr(settings, 's3_access_key_id', None),
-                'secret_access_key': getattr(settings, 's3_secret_access_key', None),
-                'bucket_name': getattr(settings, 's3_bucket_name', None),
-                'region': getattr(settings, 's3_region', 'us-east-1')
-            })
-            await file_manager.initialize()
-            logger.info("File management service initialized")
-        except Exception as e:
-            logger.warning("File management service initialization failed - continuing without S3", error=str(e))
-        
-        # Warm cache if available
-        try:
-            await warm_metadata_cache()
-            logger.info("Cache warmed with frequently accessed data")
-        except Exception as e:
-            logger.warning("Cache warming failed", error=str(e))
+        # Only initialize services if full imports are available
+        if FULL_IMPORTS_AVAILABLE:
+            # Initialize database tables (optional - may fail in development)
+            try:
+                if create_tables:
+                    await create_tables()
+                    logger.info("Database tables initialized")
+            except Exception as e:
+                logger.warning("Database initialization failed - continuing without DB", error=str(e))
+            
+            # Initialize DataLad service (optional)
+            try:
+                if DataLadService:
+                    datalad_service = DataLadService(workspace_root=Path(settings.datalad_path))
+                    await datalad_service.initialize()
+                    logger.info("DataLad service initialized")
+            except Exception as e:
+                logger.warning("DataLad service initialization failed - continuing without DataLad", error=str(e))
+            
+            # Initialize cache manager (optional)
+            try:
+                if CacheManager:
+                    cache_manager = CacheManager(redis_url=settings.redis_url)
+                    await cache_manager.initialize()
+                    logger.info("Cache manager initialized")
+            except Exception as e:
+                logger.warning("Cache manager initialization failed - continuing without Redis", error=str(e))
+            
+            # Initialize file management service (optional)
+            try:
+                if FileManagementService:
+                    file_manager = FileManagementService({
+                        'endpoint_url': getattr(settings, 's3_endpoint_url', None),
+                        'access_key_id': getattr(settings, 's3_access_key_id', None),
+                        'secret_access_key': getattr(settings, 's3_secret_access_key', None),
+                        'bucket_name': getattr(settings, 's3_bucket_name', None),
+                        'region': getattr(settings, 's3_region', 'us-east-1')
+                    })
+                    await file_manager.initialize()
+                    logger.info("File management service initialized")
+            except Exception as e:
+                logger.warning("File management service initialization failed - continuing without S3", error=str(e))
+            
+            # Warm cache if available
+            try:
+                await warm_metadata_cache()
+                logger.info("Cache warmed with frequently accessed data")
+            except Exception as e:
+                logger.warning("Cache warming failed", error=str(e))
+        else:
+            logger.info("Running in minimal mode - only health endpoint available")
         
         logger.info("Application startup completed successfully")
         
@@ -158,8 +186,9 @@ app = FastAPI(
     redoc_url="/redoc" if settings.environment == "development" else None
 )
 
-# Setup exception handlers
-setup_exception_handlers(app)
+# Setup exception handlers if available
+if FULL_IMPORTS_AVAILABLE and setup_exception_handlers:
+    setup_exception_handlers(app)
 
 # Add security middleware
 app.add_middleware(
@@ -183,11 +212,19 @@ if settings.environment == "production":
 
 # Include routers
 app.include_router(health_router, tags=["health"])
-app.include_router(auth_router, prefix=settings.api_v1_prefix, tags=["authentication"])
-app.include_router(datasets_router, prefix=settings.api_v1_prefix, tags=["datasets"])
-app.include_router(files_router, prefix=settings.api_v1_prefix, tags=["files"])
-app.include_router(validation_router, prefix=settings.api_v1_prefix, tags=["validation"])
-app.include_router(admin_router, prefix=settings.api_v1_prefix, tags=["admin"])
+
+# Include other routers only if available
+if FULL_IMPORTS_AVAILABLE:
+    if auth_router:
+        app.include_router(auth_router, prefix=settings.api_v1_prefix, tags=["authentication"])
+    if datasets_router:
+        app.include_router(datasets_router, prefix=settings.api_v1_prefix, tags=["datasets"])
+    if files_router:
+        app.include_router(files_router, prefix=settings.api_v1_prefix, tags=["files"])
+    if validation_router:
+        app.include_router(validation_router, prefix=settings.api_v1_prefix, tags=["validation"])
+    if admin_router:
+        app.include_router(admin_router, prefix=settings.api_v1_prefix, tags=["admin"])
 
 # Root endpoint
 @app.get("/")
