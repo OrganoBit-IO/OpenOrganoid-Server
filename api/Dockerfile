@@ -52,5 +52,5 @@ ENV PATH="/app/api/.venv/bin:$PATH"
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
-# Use gunicorn for production deployment - Railway provides PORT env var
-CMD gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-8000} --timeout 120
+# Use uvicorn for production deployment - Railway provides PORT env var
+CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1
