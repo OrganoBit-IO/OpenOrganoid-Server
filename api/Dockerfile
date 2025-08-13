@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Set working directory to api subdirectory
 WORKDIR /app/api
@@ -20,9 +20,7 @@ RUN pip install uv
 # Copy api dependency files first
 COPY api/pyproject.toml api/uv.lock ./
 
-# Create virtual environment and install dependencies
-RUN uv venv /opt/venv
-ENV VIRTUAL_ENV=/opt/venv
+# Install dependencies (uv will create .venv automatically)
 RUN uv sync --frozen
 
 # Copy api application code
@@ -46,13 +44,13 @@ RUN mkdir -p /app/data/datalad /app/data/storage /app/data/uploads
 # Expose port (Railway automatically detects this)
 EXPOSE 8000
 
-# Set Python path to include api directory
+# Set Python path to include api directory and activate venv
 ENV PYTHONPATH=/app/api
-ENV PATH="/opt/venv/bin:$PATH"
+ENV PATH="/app/api/.venv/bin:$PATH"
 
 # Health check - use PORT environment variable
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
 # Use gunicorn for production deployment - Railway provides PORT env var
-CMD /opt/venv/bin/gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-8000} --timeout 120
+CMD gunicorn app.main:app -w 4 -k uvicorn.workers.UvicornWorker -b 0.0.0.0:${PORT:-8000} --timeout 120
